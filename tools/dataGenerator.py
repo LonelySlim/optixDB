@@ -1,20 +1,15 @@
-import numpy as np
 import random
 
-# 生成随机整数的函数
-def generate_random_numbers():
-    number1 = random.randint(0, 100)
-    number2 = random.randint(1, 10)
-    number3 = random.randint(0, 100)
-    return number1, number2, number3
+# 生成100个包含三个整数的数组
+arrays = []
+array_length = 1e8
+group_count = 10
+for _ in range(int(array_length)):
+    array = [random.randint(0, 100), random.randint(1, group_count), random.randint(0, 100)]
+    arrays.append(array)
 
-# 创建长度为 1e8 的数组
-array_length = int(1e2)
-data = np.empty((array_length, 3), dtype=int)
-
-# 填充数组
-for i in range(array_length):
-    data[i] = generate_random_numbers()
-
-# 将数组保存到文件
-np.save('random_data.npy', data)
+# 将数组写入文件
+with open(f'generateData/uniform_data_{array_length}_{group_count}.txt', 'w') as file:
+    for array in arrays:
+        line = ' '.join(map(str, array))  # 将整数列表转换为字符串
+        file.write(line + '\n')
