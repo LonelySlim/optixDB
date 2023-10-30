@@ -502,15 +502,16 @@ void refineWithOptix(BITS *dev_result_bitmap, double *predicate,
 }
 
 int main(){
-    std::ifstream in("/home/sxr/rtdb//SDK/myOptixDB/outputdata.txt");
+    //std::ifstream in("/home/sxr/rtdb/SDK/myOptixDB/outputdata.txt");
+    std::ifstream in("/home/sxr/rtdb/SDK/optixDB/tools/generateData/uniform_data_100000000.0_10.txt");
     if(!in.is_open())
     {
         std::cerr << "can not open file outputdata.txt !" << std::endl;
         return 1;
     }
-    initializeOptix(in,100,1);
+    initializeOptix(in,100000000,1);
     in.close();
-    double predicate[6] = {0,10,1,10,0,9};
+    double predicate[6] = {0,101,1,10,0,100};
     refineWithOptix(nullptr,predicate,1,false,0);
     float *sum = (float *)malloc(10 * sizeof(float));
     int *count = (int *)malloc(10 * sizeof(int));
