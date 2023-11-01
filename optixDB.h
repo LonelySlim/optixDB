@@ -16,7 +16,7 @@ struct Params
     double*                 predicate;
     OptixTraversableHandle  handle;
     unsigned int*           result;             // record scan result
-    float*                  sum;
+    double*                  sum;
     int*                    count;
     double                  tmin;
     double                  tmax;
