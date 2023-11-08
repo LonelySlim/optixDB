@@ -465,8 +465,8 @@ void refineWithOptix(BITS *dev_result_bitmap, double *predicate,
     state.params.handle = state.gas_handle;
     state.params.inverse = inverse;
     CUDA_CHECK(cudaMemcpy(state.params.predicate, predicate, 6 * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.params.sum), state.launch_width * sizeof(double)));
-    CUDA_CHECK(cudaMemset(state.params.sum, 0 , state.launch_width * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.params.sum), state.launch_width * sizeof(int)));
+    CUDA_CHECK(cudaMemset(state.params.sum, 0 , state.launch_width * sizeof(int)));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&state.params.count), state.launch_width * sizeof(int)));
     CUDA_CHECK(cudaMemset(state.params.count, 0 , state.launch_width * sizeof(int)));
     
@@ -513,12 +513,12 @@ int main(){
     in.close();
     double predicate[6] = {0,101,1,10,0,100};
     refineWithOptix(nullptr,predicate,1,false,0);
-    double *sum = (double *)malloc(10 * sizeof(double));
+    int *sum = (int *)malloc(10 * sizeof(int));
     int *count = (int *)malloc(10 * sizeof(int));
     CUDA_CHECK(cudaMemcpy(
         reinterpret_cast<void *>(sum),
         state.params.sum,
-        10 * sizeof(double),
+        10 * sizeof(int),
         cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(
         reinterpret_cast<void *>(count),
@@ -527,7 +527,7 @@ int main(){
         cudaMemcpyDeviceToHost));
     for(int i = 0;i < 10;++i){
         if(count[i] != 0)
-        std::cout << i  << " " << sum[i] << ' ' << count[i] <<  ' ' << sum[i] / count[i] << std::endl;
+        std::cout << i  << " " << sum[i] << ' ' << count[i] <<  ' ' << ((float)sum[i]) / count[i] << std::endl;
     }
     cleanup(state);
     return 0;

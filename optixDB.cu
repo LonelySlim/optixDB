@@ -101,7 +101,7 @@ extern "C" __global__ void __intersection__cube() {
         if(point.x >= ray_origin.x && point.x <= (ray_origin.x + tmax) &&
            point.y == ray_origin.y && point.z == ray_origin.z){
             atomicAdd(params.count + idx.x, 1);
-            atomicAdd(params.sum + idx.x, point.z);
+            atomicAdd(params.sum + idx.x, (int)point.z);
         }
     } else if(ray_direction.y != 0.0f){
         if(point.y >= params.predicate[2] && point.y < params.predicate[3] &&
