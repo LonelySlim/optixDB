@@ -501,7 +501,7 @@ void refineWithOptix(BITS *dev_result_bitmap, double *predicate,
     CUDA_CHECK(cudaFree((void *)state.d_params));
 }
 
-int main(){
+int main(int argc,char **argv){
     //std::ifstream in("/home/sxr/rtdb/SDK/myOptixDB/outputdata.txt");
     std::ifstream in("/home/sxr/rtdb/SDK/optixDB/tools/generateData/uniform_data_100000000.0_10.txt");
     if(!in.is_open())
@@ -511,7 +511,7 @@ int main(){
     }
     initializeOptix(in,100000000,1);
     in.close();
-    double predicate[6] = {0,101,1,10,0,100};
+    double predicate[6] = {std::stoi(argv[1]),101,1,10,0,100};
     refineWithOptix(nullptr,predicate,1,false,0);
     int *sum = (int *)malloc(10 * sizeof(int));
     int *count = (int *)malloc(10 * sizeof(int));
