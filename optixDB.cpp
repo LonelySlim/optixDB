@@ -417,7 +417,7 @@ void initializeOptix(std::ifstream& in, int length,
 // direction = (x = 0, y = 1, z = 2)
 // ray_mode = 0 for continuous ray, 1 for ray with space, 2 for ray as point
 void refineWithOptix(BITS *dev_result_bitmap, double *predicate, 
-                     int ray_length, bool inverse, int direction) {
+                     int ray_length, bool inverse, int direction, int ray_mode) {
     timer_.commonGetStartTime(1);
     
     double prange[3] = {
@@ -441,21 +441,32 @@ void refineWithOptix(BITS *dev_result_bitmap, double *predicate,
         state.launch_height = (int) (prange[1] / state.params.ray_interval) + 1;
     }
 
-   
-    state.params.ray_space  = state.params.aabb_width;
-    state.params.ray_length = ray_length;
-    state.params.ray_stride = state.params.ray_length + state.params.ray_space;
-    state.depth             = (int) (predicate_range / state.params.ray_stride);
-    if (state.depth * state.params.ray_stride < predicate_range) {
-        double last_stride = predicate_range - state.depth * state.params.ray_stride;
-        state.params.ray_last_length = max(last_stride - state.params.ray_space, 0.0);
-        if (state.params.ray_last_length == 0.0) {
-            state.params.ray_last_length = 1e-5;
+    if(ray_mode == 0){
+        state.params.ray_space  = state.params.aabb_width;
+        state.params.ray_length = ray_length;
+        state.params.ray_stride = state.params.ray_length + state.params.ray_space;
+        state.depth             = (int) (predicate_range / state.params.ray_stride);
+        if (state.depth * state.params.ray_stride < predicate_range) {
+            double last_stride = predicate_range - state.depth * state.params.ray_stride;
+            state.params.ray_last_length = max(last_stride - state.params.ray_space, 0.0);
+            if (state.params.ray_last_length == 0.0) {
+                state.params.ray_last_length = 1e-5;
+            }
+            state.depth++;
+        } else {
+            state.params.ray_last_length = state.params.ray_length;
         }
-        state.depth++;
-    } else {
-        state.params.ray_last_length = state.params.ray_length;
+    }else if(ray_mode == 1){
+        if (direction == 0) {
+            state.params.ray_length = prange[0];
+            state.params.ray_last_length = prange[0];
+        } else if (direction == 1) {
+        //TODO:
+        } else {
+        //TODO:
+        }
     }
+    
     
 
     state.params.result = dev_result_bitmap;
@@ -481,7 +492,10 @@ void refineWithOptix(BITS *dev_result_bitmap, double *predicate,
         cudaMemcpyHostToDevice));
 
     timer_.commonGetStartTime(2);
-    OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.launch_width, state.launch_height, state.depth));
+    if(ray_mode == 0)
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.launch_width, state.launch_height, state.depth));
+    else if(ray_mode == 1)
+        OPTIX_CHECK(optixLaunch(state.pipeline, 0, state.d_params, sizeof(Params), &state.sbt, state.launch_width, state.launch_height, 1));
     CUDA_SYNC_CHECK();
     timer_.commonGetEndTime(2);
     timer_.commonGetEndTime(1);
@@ -502,6 +516,10 @@ void refineWithOptix(BITS *dev_result_bitmap, double *predicate,
 }
 
 int main(int argc,char **argv){
+    if(argc != 3){
+        std::cout << "argc != 3 !" << std::endl;
+        return 1;
+    }
     //std::ifstream in("/home/sxr/rtdb/SDK/myOptixDB/outputdata.txt");
     std::ifstream in("/home/sxr/rtdb/SDK/optixDB/tools/generateData/uniform_data_100000000.0_10.txt");
     if(!in.is_open())
@@ -512,7 +530,7 @@ int main(int argc,char **argv){
     initializeOptix(in,100000000,1);
     in.close();
     double predicate[6] = {std::stoi(argv[1]),101,1,10,0,100};
-    refineWithOptix(nullptr,predicate,1,false,0);
+    refineWithOptix(nullptr,predicate,1,false,0,std::stoi(argv[2]));
     int *sum = (int *)malloc(10 * sizeof(int));
     int *count = (int *)malloc(10 * sizeof(int));
     CUDA_CHECK(cudaMemcpy(
