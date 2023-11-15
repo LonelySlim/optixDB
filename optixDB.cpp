@@ -75,18 +75,15 @@ typedef uint32_t BITS;
 Timer                   timer_;
 ScanState               state;
 
-extern "C" void kGenAABB(double3 *points, double radius, unsigned int numPrims, OptixAabb *d_aabb, int epsilon);
-
 static void context_log_cb(unsigned int level, const char* tag, const char* message, void* /*cbdata */) {
     std::cerr << "[" << std::setw(2) << level << "][" << std::setw(12) << tag << "]: "
               << message << "\n";
 }
 
-static void createVerticesArray(double3* vertices, std::ifstream& in)
+static void createVerticesArray(std::vector<float3>& vertices, std::ifstream& in)
 {
-    double p1,p2,p3;
+    float p1,p2,p3;
     std::string line;
-    int i = 0;
     while(std::getline(in,line))
     {
         std::istringstream iss(line);
@@ -97,10 +94,10 @@ static void createVerticesArray(double3* vertices, std::ifstream& in)
         p2 = std::stoi(element);
         std::getline(iss, element, ' ');
         p3 = std::stoi(element);
-        vertices[i] = {p3,p2,p1};
-        i++;
+        vertices.push_back({p3,p2,p1 + 0.5f});
+        vertices.push_back({p3 + 0.5f,p2 + 0.5f,p1 - 0.5f});
+        vertices.push_back({p3 - 0.5f,p2 - 0.5f,p1 - 0.5f});
     }
-    //std::cout << "the num of input vertices: " << i << std::endl; 
 }
 
 void initialize_optix(ScanState &state) {
@@ -128,41 +125,33 @@ void make_gas(ScanState &state) {
     accel_options.buildFlags = OPTIX_BUILD_FLAG_NONE;
     accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
 
-    const size_t vertices_size = sizeof(double3) * state.length;
-    CUdeviceptr d_vertices = 0;
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_vertices), vertices_size));
-    CUDA_CHECK(cudaMemcpy(
-        reinterpret_cast<void *>(d_vertices),
-        state.vertices,
-        vertices_size,
-        cudaMemcpyHostToDevice));
-    state.params.points = reinterpret_cast<double3 *>(d_vertices);
+    const size_t vertices_size = sizeof( float3 )*state.vertices.size();
+    CUdeviceptr d_vertices=0;
+    CUDA_CHECK( cudaMalloc( reinterpret_cast<void**>( &d_vertices ), vertices_size ) );
+    CUDA_CHECK( cudaMemcpy(
+                reinterpret_cast<void*>( d_vertices ),
+                state.vertices.data(),
+                vertices_size,
+                cudaMemcpyHostToDevice
+                ) );
+    state.params.points = reinterpret_cast<float3 *>(d_vertices);
 
-    // set aabb
-    OptixAabb *d_aabb;
-    unsigned int numPrims = state.length;
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_aabb), numPrims * sizeof(OptixAabb)));
-    kGenAABB(reinterpret_cast<double3 *>(d_vertices), state.params.aabb_width / 2, numPrims, d_aabb, state.epsilon / 2);
-    CUdeviceptr d_aabb_ptr = reinterpret_cast<CUdeviceptr>(d_aabb);
 
     // Our build input is a simple list of non-indexed triangle vertices
-    const uint32_t vertex_input_flags[1] = {OPTIX_GEOMETRY_FLAG_NONE};
-    OptixBuildInput vertex_input = {};
-    vertex_input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
-    vertex_input.customPrimitiveArray.aabbBuffers = &d_aabb_ptr;
-    vertex_input.customPrimitiveArray.flags = vertex_input_flags;
-    vertex_input.customPrimitiveArray.numSbtRecords = 1;
-    vertex_input.customPrimitiveArray.numPrimitives = numPrims;
-    // it's important to pass 0 to sbtIndexOffsetBuffer
-    vertex_input.customPrimitiveArray.sbtIndexOffsetBuffer = 0;
-    vertex_input.customPrimitiveArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);
-    vertex_input.customPrimitiveArray.primitiveIndexOffset = 0;
+    const uint32_t triangle_input_flags[1] = { OPTIX_GEOMETRY_FLAG_REQUIRE_SINGLE_ANYHIT_CALL }; // !!! ensure the correctness of accumulation !!!
+    OptixBuildInput triangle_input = {};
+    triangle_input.type                        = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
+    triangle_input.triangleArray.vertexFormat  = OPTIX_VERTEX_FORMAT_FLOAT3;
+    triangle_input.triangleArray.numVertices   = static_cast<uint32_t>( state.vertices.size() );
+    triangle_input.triangleArray.vertexBuffers = &d_vertices;
+    triangle_input.triangleArray.flags         = triangle_input_flags;
+    triangle_input.triangleArray.numSbtRecords = 1;
 
     OptixAccelBufferSizes gas_buffer_sizes;
     OPTIX_CHECK(optixAccelComputeMemoryUsage(
         state.context,
         &accel_options,
-        &vertex_input,
+        &triangle_input,
         1, // Number of build inputs
         &gas_buffer_sizes));
     CUdeviceptr d_temp_buffer_gas;
@@ -178,7 +167,7 @@ void make_gas(ScanState &state) {
         state.context,
         0, // CUDA stream
         &accel_options,
-        &vertex_input,
+        &triangle_input,
         1, // num build inputs
         d_temp_buffer_gas,
         gas_buffer_sizes.tempSizeInBytes,
@@ -214,7 +203,10 @@ void make_module(ScanState &state) {
 #endif
     state.pipeline_compile_options.pipelineLaunchParamsVariableName = "params";
     // By default (usesPrimitiveTypeFlags == 0) it supports custom and triangle primitives
-    state.pipeline_compile_options.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM;
+    //
+    // !!! important !!!
+    //
+    state.pipeline_compile_options.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE; 
 
     const std::string ptx = sutil::getPtxString(OPTIX_SAMPLE_NAME, OPTIX_SAMPLE_DIR, "optixDB.cu");
     size_t sizeof_log = sizeof(log);
@@ -265,9 +257,10 @@ void make_program_groups(ScanState &state) {
 
     OptixProgramGroupDesc hitgroup_prog_group_desc = {};
     hitgroup_prog_group_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-    hitgroup_prog_group_desc.hitgroup.moduleIS = state.module;
-    hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__cube";
-      
+    hitgroup_prog_group_desc.hitgroup.moduleCH            = state.module;
+    hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
+    hitgroup_prog_group_desc.hitgroup.moduleAH            = state.module;
+    hitgroup_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__ah";  
     sizeof_log = sizeof(log);
     OPTIX_CHECK_LOG(optixProgramGroupCreate(
         state.context,
@@ -390,7 +383,6 @@ void initializeOptix(std::ifstream& in, int length,
                     uint32_t cube_width) {
     fprintf(stdout, "[OptiX]initializeOptix begin...\n");
     state.length = length;
-    state.vertices = (double3 *) malloc(length * sizeof(double3));
     state.result_byte_num = ((state.length - 1) / 32 + 1) * 4;
     createVerticesArray(state.vertices,in);
     state.params.aabb_width = cube_width;
@@ -544,7 +536,7 @@ int main(int argc,char **argv){
         10 * sizeof(int),
         cudaMemcpyDeviceToHost));
     for(int i = 0;i < 10;++i){
-        if(count[i] != 0)
+        //if(count[i] != 0)
         std::cout << i  << " " << sum[i] << ' ' << count[i] <<  ' ' << ((float)sum[i]) / count[i] << std::endl;
     }
     cleanup(state);

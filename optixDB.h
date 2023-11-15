@@ -3,7 +3,7 @@
 
 struct Params
 {
-    double3*                points;             // d_pointer of vertices
+    float3*                 points;             // d_pointer of vertices
     int                     width;              // number of ray
     int                     height;             // number of ray
     int                     direction;          // direction = (x = 0, y = 1, z = 2)

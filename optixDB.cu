@@ -11,7 +11,7 @@ __constant__ Params params;
 static __forceinline__ __device__ void computeRay( uint3 idx, float3& origin, float3& direction ) {
     if (params.direction == 0) { // x
         origin = {
-            float((params.predicate[0]) + idx.z * params.ray_stride),
+            float((params.predicate[0]) + idx.z * params.ray_stride - 1e-5),
             float(params.predicate[2] + (idx.x) * params.ray_interval),
             float(params.predicate[4] + (idx.y) * params.ray_interval)
         };
@@ -31,6 +31,7 @@ static __forceinline__ __device__ void computeRay( uint3 idx, float3& origin, fl
         };
         direction = {0.0f, 0.0f, 1.0f};
     }
+    //printf("%f %f %f %f\n",origin.x,origin.y,origin.z,direction.x);
 }
 
 static __forceinline__ __device__ void set_result(unsigned int *result, int idx) {
@@ -59,10 +60,11 @@ extern "C" __global__ void __raygen__rg() {
     computeRay( idx, ray_origin, ray_direction );
 
     // Trace the ray against our scene hierarchy
-    double ray_length = params.ray_length;
+    double ray_length = params.ray_length + 1e-5 * 2;
     if (idx.z == dim.z - 1) {
-        ray_length = params.ray_last_length;
+        ray_length = params.ray_last_length + 1e-5 * 2;
     }
+    //printf("%lf\n" ,ray_length);
     optixTrace(
             params.handle, 
             ray_origin,
@@ -78,42 +80,31 @@ extern "C" __global__ void __raygen__rg() {
             );
 }
 
-extern "C" __global__ void __miss__ms() {
+extern "C" __global__ void __miss__ms()
+{
+    //do nothing
 }
 
-extern "C" __global__ void __intersection__cube() {
+
+extern "C" __global__ void __closesthit__ch()
+{
+    //do nothing
+}
+
+extern "C" __global__ void __anyhit__ah()
+{
     unsigned int primIdx = optixGetPrimitiveIndex();
     float3 ray_origin = optixGetObjectRayOrigin();
     float3 ray_direction = optixGetObjectRayDirection();
     const uint3 idx = optixGetLaunchIndex();
-    double3 point = params.points[primIdx];
-
-    // if (point.x > params.predicate[0] && point.x < params.predicate[1] &&
-    //     point.y > params.predicate[2] && point.y < params.predicate[3] && 
-    //     point.z > params.predicate[4] && point.z < params.predicate[5] ) {
-    //     set_result(params.result, primIdx);
-    // }
-    
-    double radius = params.aabb_width / 2;
-    float tmax = optixGetRayTmax();
-
+    float3 point = params.points[primIdx * 3];
     if(ray_direction.x != 0.0f){
-        if(point.x >= ray_origin.x && point.x <= (ray_origin.x + tmax) &&
-           point.y == ray_origin.y && point.z == ray_origin.z){
-            atomicAdd(params.count + idx.x, 1);
-            atomicAdd(params.sum + idx.x, (int)point.z);
-        }
+        atomicAdd(params.count + idx.x, 1);
+        atomicAdd(params.sum + idx.x, (int)point.z);
     } else if(ray_direction.y != 0.0f){
-        if(point.y >= params.predicate[2] && point.y < params.predicate[3] &&
-        ray_origin.x == point.x){
-            atomicAdd(params.count + idx.x , 1);
-            atomicAdd(params.sum + idx.x , point.z);
-        }
+        //TODO:
     } else if(ray_direction.z != 0.0f){
-        if(point.z >= params.predicate[4] && point.z < params.predicate[5] &&
-        ray_origin.x == point.x){
-            atomicAdd(params.count + idx.x , 1);
-            atomicAdd(params.sum + idx.x , point.y);
-        }
+        //TODO:
     }
+    optixIgnoreIntersection();
 }

@@ -6,6 +6,7 @@
 #include <optix_types.h>
 #include <unordered_set>
 #include "optixDB.h"
+#include <vector>
 
 struct ScanState
 {
@@ -30,7 +31,7 @@ struct ScanState
     OptixShaderBindingTable         sbt                       = {}; 
 
     uint32_t                        bound                     = UINT32_MAX;
-    double3*                        vertices;
+    std::vector<float3>                  vertices;
     int                             length;                                      // num of vertices
     int                             depth                     = 1;
     int                             launch_width;
